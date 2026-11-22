@@ -22,11 +22,19 @@ h1 { font: 400 clamp(34px, 6vw, 58px)/1.05 var(--display); margin: 0; text-wrap:
 .main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 32px; align-items: start; }
 @media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
 .views { display: grid; gap: 24px; min-width: 0; }
-.cats { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-.cats label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--fg); cursor: pointer; }
-.cats input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
-.cats small { font: 12px var(--mono); color: var(--muted); }
-.chip[hidden] { display: none; }
+/* сворачиваемые разделы: стрелка-шеврон у заголовка */
+.fold-h { all: unset; display: flex; align-items: center; gap: 8px; cursor: pointer; width: 100%; box-sizing: border-box; }
+.fold-h:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.fold-h::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translate(-2px, -2px); flex: none; }
+.closed > .fold-h::before, [aria-expanded="false"]::before { transform: rotate(-45deg); }
+@media (prefers-reduced-motion: no-preference) { .fold-h::before { transition: transform .2s; } }
+.group.closed > :not(h2) { display: none; }
+.group > h2 .fold-h { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.vgroups { display: grid; gap: 12px; }
+.vgroup { display: grid; gap: 8px; }
+.vgroup > .fold-h { font: 500 13px var(--body); color: var(--fg); }
+.vgroup > .fold-h small { font: 12px var(--mono); color: var(--muted); }
+.vgroup.closed > .chips { display: none; }
 figure { margin: 0; display: grid; gap: 10px; min-width: 0; }
 figcaption { font: 12px/1.5 var(--mono); color: var(--muted); }
 .stage { background: radial-gradient(120% 90% at 50% 40%, #3a2420 0%, #241816 70%); border: 1px solid var(--line); border-radius: 14px; padding: clamp(12px, 3vw, 36px); }
@@ -81,8 +89,7 @@ dd { margin: 0; font: 500 13px/1.6 var(--mono); font-variant-numeric: tabular-nu
     </div>
     <aside>
       <div class="group"><h2>Узор</h2>
-        <div class="cats" id="cats"></div>
-        <div class="chips" id="variant"></div>
+        <div class="vgroups" id="variant"></div>
         <div class="sliders">
           <label for="ps">Масштаб узора <output id="psOut"></output><input id="ps" type="range" min="70" max="200" step="5" value="100"></label>
           <label for="dx">Сдвиг по горизонтали <output id="dxOut"></output><input id="dx" type="range" min="-40" max="40" step="1" value="0"></label>
@@ -386,29 +393,38 @@ chips('variant', D.variants.map(v => [v.name, v.key]), 'variant', thumb, () => {
   const v = D.variants.find(x => x.key === state.variant);
   document.querySelectorAll('.patDef').forEach(p => p.setAttribute('d', v.pat));
 });
-// категории узоров: галочки скрывают и показывают группы; выбор запоминается в этом браузере
+// сворачивание: разделы панели и группы узоров раскрываются и сворачиваются по стрелке; состояние запоминается в этом браузере
 {
-  const CATS = [['classic', 'Первые'], ['bold', 'Силуэт'], ['fine', 'Тонкие'], ['lace', 'Кружево']];
-  let hidden = [];
-  try { hidden = JSON.parse(localStorage.getItem('konvert-hidden-cats') || '[]'); } catch (e) {}
-  document.querySelectorAll('#variant .chip').forEach(b => { const v = D.variants.find(x => 'variant-' + x.key === b.id); if (v) b.dataset.cat = v.cat; });
-  const box = document.getElementById('cats');
-  const apply = () => document.querySelectorAll('#variant .chip').forEach(b => { b.hidden = hidden.includes(b.dataset.cat) && b.getAttribute('aria-pressed') !== 'true'; });
-  for (const [cat, label] of CATS) {
-    const n = D.variants.filter(v => v.cat === cat).length;
-    if (!n) continue;
-    const l = document.createElement('label'), c = document.createElement('input');
-    c.type = 'checkbox'; c.checked = !hidden.includes(cat);
-    c.addEventListener('change', () => {
-      hidden = c.checked ? hidden.filter(x => x !== cat) : [...hidden, cat];
-      try { localStorage.setItem('konvert-hidden-cats', JSON.stringify(hidden)); } catch (e) {}
-      apply();
+  let closedSet = [];
+  try { closedSet = JSON.parse(localStorage.getItem('konvert-closed') || '[]'); } catch (e) {}
+  const save = () => { try { localStorage.setItem('konvert-closed', JSON.stringify(closedSet)); } catch (e) {} };
+  function foldable(container, head, id) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'fold-h';
+    while (head.firstChild) b.appendChild(head.firstChild);
+    head.appendChild(b);
+    const set = closed => { container.classList.toggle('closed', closed); b.setAttribute('aria-expanded', String(!closed)); };
+    set(closedSet.includes(id));
+    b.addEventListener('click', () => {
+      const closed = !container.classList.contains('closed'); set(closed);
+      closedSet = closed ? [...closedSet, id] : closedSet.filter(x => x !== id); save();
     });
-    l.append(c, label + ' ', Object.assign(document.createElement('small'), { textContent: n }));
-    box.appendChild(l);
   }
-  document.getElementById('variant').addEventListener('click', () => setTimeout(apply));
-  apply();
+  // группы узоров внутри «Узора»
+  const CATS = [['classic', 'Первые'], ['bold', 'Силуэт'], ['fine', 'Тонкие'], ['lace', 'Кружево']];
+  const box = document.getElementById('variant'), chipsAll = [...box.querySelectorAll('.chip')];
+  for (const [cat, label] of CATS) {
+    const vs = D.variants.filter(v => v.cat === cat);
+    if (!vs.length) continue;
+    const grp = document.createElement('div'); grp.className = 'vgroup';
+    const head = document.createElement('div'); head.append(label + ' ', Object.assign(document.createElement('small'), { textContent: vs.length }));
+    const list = document.createElement('div'); list.className = 'chips';
+    for (const v of vs) list.appendChild(chipsAll.find(c => c.id === 'variant-' + v.key));
+    grp.append(head, list); box.appendChild(grp);
+    foldable(grp, head, 'v-' + cat);
+    grp.replaceChild(grp.querySelector('.fold-h'), head);
+  }
+  // разделы панели настроек
+  document.querySelectorAll('aside .group').forEach(g => { const h = g.querySelector(':scope > h2'); if (h) foldable(g, h, 'g-' + h.textContent.trim()); });
 }
 for (const [id, key] of [['ps', 'ps'], ['dx', 'dx'], ['dy', 'dy']])
   document.getElementById(id).addEventListener('input', e => { state[key] = id === 'ps' ? e.target.value / 100 : +e.target.value; placePattern(); });
